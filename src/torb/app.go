@@ -360,6 +360,7 @@ func main() {
 
 		return c.NoContent(204)
 	})
+
 	e.POST("/api/users", func(c echo.Context) error {
 		var params struct {
 			Nickname  string `json:"nickname"`
@@ -374,7 +375,9 @@ func main() {
 		}
 
 		var user User
+
 		if err := tx.QueryRow("SELECT * FROM users WHERE login_name = ?", params.LoginName).Scan(&user.ID, &user.LoginName, &user.Nickname, &user.PassHash); err != sql.ErrNoRows {
+			//if err := tx.QueryRow("SELECT id FROM users WHERE login_name = ?", params.LoginName).Scan(&user.ID); err != sql.ErrNoRows {
 			tx.Rollback()
 			if err == nil {
 				return resError(c, "duplicated", 409)
@@ -401,6 +404,7 @@ func main() {
 			"nickname": params.Nickname,
 		})
 	})
+
 	e.GET("/api/users/:id", func(c echo.Context) error {
 		var user User
 		if err := db.QueryRow("SELECT id, nickname FROM users WHERE id = ?", c.Param("id")).Scan(&user.ID, &user.Nickname); err != nil {
@@ -490,6 +494,7 @@ func main() {
 			"recent_events":       recentEvents,
 		})
 	}, loginRequired)
+
 	e.POST("/api/actions/login", func(c echo.Context) error {
 		var params struct {
 			LoginName string `json:"login_name"`
@@ -498,7 +503,17 @@ func main() {
 		c.Bind(&params)
 
 		user := new(User)
-		if err := db.QueryRow("SELECT * FROM users WHERE login_name = ?", params.LoginName).Scan(&user.ID, &user.LoginName, &user.Nickname, &user.PassHash); err != nil {
+
+		/*
+			if err := db.QueryRow("SELECT * FROM users WHERE login_name = ?", params.LoginName).Scan(&user.ID, &user.LoginName, &user.Nickname, &user.PassHash); err != nil {
+				if err == sql.ErrNoRows {
+					return resError(c, "authentication_failed", 401)
+				}
+				return err
+			}
+		*/
+
+		if err := db.QueryRow("SELECT id,pass_hash FROM users WHERE login_name = ?", params.LoginName).Scan(&user.ID, &user.PassHash); err != nil {
 			if err == sql.ErrNoRows {
 				return resError(c, "authentication_failed", 401)
 			}
@@ -520,10 +535,12 @@ func main() {
 		}
 		return c.JSON(200, user)
 	})
+
 	e.POST("/api/actions/logout", func(c echo.Context) error {
 		sessDeleteUserID(c)
 		return c.NoContent(204)
 	}, loginRequired)
+
 	e.GET("/api/events", func(c echo.Context) error {
 		events, err := getEvents(true)
 		if err != nil {
@@ -534,6 +551,7 @@ func main() {
 		}
 		return c.JSON(200, events)
 	})
+
 	e.GET("/api/events/:id", func(c echo.Context) error {
 		eventID, err := strconv.ParseInt(c.Param("id"), 10, 64)
 		if err != nil {
@@ -556,6 +574,7 @@ func main() {
 		}
 		return c.JSON(200, sanitizeEvent(event))
 	})
+
 	e.POST("/api/events/:id/actions/reserve", func(c echo.Context) error {
 		eventID, err := strconv.ParseInt(c.Param("id"), 10, 64)
 		if err != nil {
@@ -588,7 +607,17 @@ func main() {
 		var sheet Sheet
 		var reservationID int64
 		for {
-			if err := db.QueryRow("SELECT * FROM sheets WHERE id NOT IN (SELECT sheet_id FROM reservations WHERE event_id = ? AND canceled_at IS NULL FOR UPDATE) AND `rank` = ? ORDER BY RAND() LIMIT 1", event.ID, params.Rank).Scan(&sheet.ID, &sheet.Rank, &sheet.Num, &sheet.Price); err != nil {
+
+			/*
+				if err := db.QueryRow("SELECT * FROM sheets WHERE id NOT IN (SELECT sheet_id FROM reservations WHERE event_id = ? AND canceled_at IS NULL FOR UPDATE) AND `rank` = ? ORDER BY RAND() LIMIT 1", event.ID, params.Rank).Scan(&sheet.ID, &sheet.Rank, &sheet.Num, &sheet.Price); err != nil {
+					if err == sql.ErrNoRows {
+						return resError(c, "sold_out", 409)
+					}
+					return err
+				}
+			*/
+
+			if err := db.QueryRow("SELECT id,num FROM sheets WHERE id NOT IN (SELECT sheet_id FROM reservations WHERE event_id = ? AND canceled_at IS NULL FOR UPDATE) AND `rank` = ? ORDER BY RAND() LIMIT 1", event.ID, params.Rank).Scan(&sheet.ID, &sheet.Num); err != nil {
 				if err == sql.ErrNoRows {
 					return resError(c, "sold_out", 409)
 				}
@@ -626,6 +655,7 @@ func main() {
 			"sheet_num":  sheet.Num,
 		})
 	}, loginRequired)
+
 	e.DELETE("/api/events/:id/sheets/:rank/:num/reservation", func(c echo.Context) error {
 		eventID, err := strconv.ParseInt(c.Param("id"), 10, 64)
 		if err != nil {
@@ -779,6 +809,7 @@ func main() {
 		}
 		return c.JSON(200, event)
 	}, adminLoginRequired)
+
 	e.GET("/admin/api/events/:id", func(c echo.Context) error {
 		eventID, err := strconv.ParseInt(c.Param("id"), 10, 64)
 		if err != nil {

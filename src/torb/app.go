@@ -2,10 +2,17 @@ package main
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	_ "github.com/go-sql-driver/mysql"
+	"github.com/gorilla/sessions"
+	"github.com/labstack/echo"
+	"github.com/labstack/echo-contrib/session"
+	"github.com/labstack/echo/middleware"
 	"html/template"
 	"io"
 	"log"
@@ -15,12 +22,6 @@ import (
 	"strconv"
 	"strings"
 	"time"
-
-	_ "github.com/go-sql-driver/mysql"
-	"github.com/gorilla/sessions"
-	"github.com/labstack/echo"
-	"github.com/labstack/echo-contrib/session"
-	"github.com/labstack/echo/middleware"
 )
 
 type User struct {
@@ -377,7 +378,6 @@ func main() {
 		var user User
 
 		if err := tx.QueryRow("SELECT * FROM users WHERE login_name = ?", params.LoginName).Scan(&user.ID, &user.LoginName, &user.Nickname, &user.PassHash); err != sql.ErrNoRows {
-			//if err := tx.QueryRow("SELECT id FROM users WHERE login_name = ?", params.LoginName).Scan(&user.ID); err != sql.ErrNoRows {
 			tx.Rollback()
 			if err == nil {
 				return resError(c, "duplicated", 409)
@@ -385,7 +385,13 @@ func main() {
 			return err
 		}
 
-		res, err := tx.Exec("INSERT INTO users (login_name, pass_hash, nickname) VALUES (?, SHA2(?, 256), ?)", params.LoginName, params.Password, params.Nickname)
+		var passHash string
+		converted := sha256.Sum256([]byte(params.Password))
+		passHash = hex.EncodeToString(converted[:])
+
+		//res, err := tx.Exec("INSERT INTO users (login_name, pass_hash, nickname) VALUES (?, SHA2(?, 256), ?)", params.LoginName, params.Password, params.Nickname)
+		res, err := tx.Exec("INSERT INTO users (login_name, pass_hash, nickname) VALUES (?,?,?)", params.LoginName, passHash, params.Nickname)
+
 		if err != nil {
 			tx.Rollback()
 			return resError(c, "", 0)
@@ -504,15 +510,6 @@ func main() {
 
 		user := new(User)
 
-		/*
-			if err := db.QueryRow("SELECT * FROM users WHERE login_name = ?", params.LoginName).Scan(&user.ID, &user.LoginName, &user.Nickname, &user.PassHash); err != nil {
-				if err == sql.ErrNoRows {
-					return resError(c, "authentication_failed", 401)
-				}
-				return err
-			}
-		*/
-
 		if err := db.QueryRow("SELECT id,pass_hash FROM users WHERE login_name = ?", params.LoginName).Scan(&user.ID, &user.PassHash); err != nil {
 			if err == sql.ErrNoRows {
 				return resError(c, "authentication_failed", 401)
@@ -521,9 +518,9 @@ func main() {
 		}
 
 		var passHash string
-		if err := db.QueryRow("SELECT SHA2(?, 256)", params.Password).Scan(&passHash); err != nil {
-			return err
-		}
+		converted := sha256.Sum256([]byte(params.Password))
+		passHash = hex.EncodeToString(converted[:])
+
 		if user.PassHash != passHash {
 			return resError(c, "authentication_failed", 401)
 		}
@@ -751,9 +748,9 @@ func main() {
 		}
 
 		var passHash string
-		if err := db.QueryRow("SELECT SHA2(?, 256)", params.Password).Scan(&passHash); err != nil {
-			return err
-		}
+		converted := sha256.Sum256([]byte(params.Password))
+		passHash = hex.EncodeToString(converted[:])
+
 		if administrator.PassHash != passHash {
 			return resError(c, "authentication_failed", 401)
 		}

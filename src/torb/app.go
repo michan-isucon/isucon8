@@ -235,6 +235,7 @@ func getEvent(eventID, loginUserID int64) (*Event, error) {
 	}
 
 	rows, err := db.Query("SELECT * FROM sheets ORDER BY `rank`, num")
+
 	if err != nil {
 		return nil, err
 	}
@@ -242,15 +243,18 @@ func getEvent(eventID, loginUserID int64) (*Event, error) {
 
 	for rows.Next() {
 		var sheet Sheet
+
 		if err := rows.Scan(&sheet.ID, &sheet.Rank, &sheet.Num, &sheet.Price); err != nil {
 			return nil, err
 		}
+
 		event.Sheets[sheet.Rank].Price = event.Price + sheet.Price
 		event.Total++
 		event.Sheets[sheet.Rank].Total++
 
 		var reservation Reservation
-		err := db.QueryRow("SELECT * FROM reservations WHERE event_id = ? AND sheet_id = ? AND canceled_at IS NULL GROUP BY event_id, sheet_id HAVING reserved_at = MIN(reserved_at)", event.ID, sheet.ID).Scan(&reservation.ID, &reservation.EventID, &reservation.SheetID, &reservation.UserID, &reservation.ReservedAt, &reservation.CanceledAt)
+		err := db.QueryRow("SELECT user_id,reserved_at FROM reservations WHERE event_id = ? AND sheet_id = ? AND canceled_at IS NULL GROUP BY event_id, sheet_id HAVING reserved_at = MIN(reserved_at)", event.ID, sheet.ID).Scan(&reservation.UserID, &reservation.ReservedAt)
+
 		if err == nil {
 			sheet.Mine = reservation.UserID == loginUserID
 			sheet.Reserved = true
@@ -389,7 +393,6 @@ func main() {
 		converted := sha256.Sum256([]byte(params.Password))
 		passHash = hex.EncodeToString(converted[:])
 
-		//res, err := tx.Exec("INSERT INTO users (login_name, pass_hash, nickname) VALUES (?, SHA2(?, 256), ?)", params.LoginName, params.Password, params.Nickname)
 		res, err := tx.Exec("INSERT INTO users (login_name, pass_hash, nickname) VALUES (?,?,?)", params.LoginName, passHash, params.Nickname)
 
 		if err != nil {
@@ -604,15 +607,6 @@ func main() {
 		var sheet Sheet
 		var reservationID int64
 		for {
-
-			/*
-				if err := db.QueryRow("SELECT * FROM sheets WHERE id NOT IN (SELECT sheet_id FROM reservations WHERE event_id = ? AND canceled_at IS NULL FOR UPDATE) AND `rank` = ? ORDER BY RAND() LIMIT 1", event.ID, params.Rank).Scan(&sheet.ID, &sheet.Rank, &sheet.Num, &sheet.Price); err != nil {
-					if err == sql.ErrNoRows {
-						return resError(c, "sold_out", 409)
-					}
-					return err
-				}
-			*/
 
 			if err := db.QueryRow("SELECT id,num FROM sheets WHERE id NOT IN (SELECT sheet_id FROM reservations WHERE event_id = ? AND canceled_at IS NULL FOR UPDATE) AND `rank` = ? ORDER BY RAND() LIMIT 1", event.ID, params.Rank).Scan(&sheet.ID, &sheet.Num); err != nil {
 				if err == sql.ErrNoRows {
